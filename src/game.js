@@ -1602,12 +1602,12 @@ function draw() {
 
   drawBackground(level);
 
-  drawForegroundParallax(level);
   ctx.save();
   ctx.translate(Math.round(-camera.x + sx), Math.round(-camera.y + sy));
   drawWorld(level);
   ctx.restore();
 
+  drawForegroundParallax(level);
   drawVignette(level);
   drawTinyProgress(level);
   drawHint();
@@ -1706,8 +1706,9 @@ function drawForegroundParallax(level) {
   const y = -maxPanY * clamp(worldPanY * 0.58, 0, 1);
 
   ctx.save();
-  ctx.globalAlpha = 0.4;
-  ctx.filter = "brightness(0.9) saturate(0.88)";
+  ctx.globalAlpha = 0.46;
+  ctx.globalCompositeOperation = "multiply";
+  ctx.filter = "brightness(0.72) saturate(0.92)";
   ctx.drawImage(foregroundParallax, x, y, drawW, drawH);
   ctx.restore();
 }
