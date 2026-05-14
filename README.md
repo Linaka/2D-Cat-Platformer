@@ -3,6 +3,7 @@
 A progression-based 2D platformer about a small cat trying to find its way home through a strange forest.
 
 The three skills are Double Jump, Dash, and Glide Down.
+The forest background is bundled in `assets/level-background.png`.
 
 ## Run Locally
 

@@ -19,6 +19,10 @@ const keys = new Set();
 const justPressed = new Set();
 const particles = [];
 const camera = { x: 0, y: 0 };
+const levelBackground = new Image();
+
+levelBackground.decoding = "async";
+levelBackground.src = new URL("../assets/level-background.png", import.meta.url).href;
 
 const state = {
   levelIndex: 0,
@@ -1622,6 +1626,8 @@ function updateCamera(level) {
 }
 
 function drawBackground(level) {
+  if (drawImportedLevelBackground(level)) return;
+
   const p = level.palette;
   const sky = ctx.createLinearGradient(0, 0, 0, viewH);
   sky.addColorStop(0, p.skyTop);
@@ -1643,6 +1649,41 @@ function drawBackground(level) {
   ctx.fillRect(0, 0, viewW, viewH);
 
   drawAtmosphereTexture(level);
+}
+
+function drawImportedLevelBackground(level) {
+  if (!levelBackground.complete || !levelBackground.naturalWidth) return false;
+
+  const imageW = levelBackground.naturalWidth;
+  const imageH = levelBackground.naturalHeight;
+  const scale = Math.max(viewW / imageW, viewH / imageH);
+  const drawW = imageW * scale;
+  const drawH = imageH * scale;
+  const maxPanX = Math.max(0, drawW - viewW);
+  const maxPanY = Math.max(0, drawH - viewH);
+  const worldPanX = clamp(camera.x / Math.max(1, level.width - viewW), 0, 1);
+  const worldPanY = clamp(camera.y / Math.max(1, level.height - viewH), 0, 1);
+  const x = -maxPanX * worldPanX;
+  const y = -maxPanY * clamp(worldPanY * 0.36, 0, 1);
+
+  ctx.drawImage(levelBackground, x, y, drawW, drawH);
+
+  const depth = ctx.createLinearGradient(0, 0, 0, viewH);
+  depth.addColorStop(0, "rgba(2, 8, 18, 0.2)");
+  depth.addColorStop(0.5, "rgba(5, 17, 22, 0.02)");
+  depth.addColorStop(1, "rgba(2, 8, 14, 0.34)");
+  ctx.fillStyle = depth;
+  ctx.fillRect(0, 0, viewW, viewH);
+
+  const sideShade = ctx.createLinearGradient(0, 0, viewW, 0);
+  sideShade.addColorStop(0, "rgba(2, 8, 16, 0.22)");
+  sideShade.addColorStop(0.5, "rgba(2, 8, 16, 0)");
+  sideShade.addColorStop(1, "rgba(2, 8, 16, 0.22)");
+  ctx.fillStyle = sideShade;
+  ctx.fillRect(0, 0, viewW, viewH);
+
+  drawAtmosphereTexture(level);
+  return true;
 }
 
 function drawCelestial(level) {
