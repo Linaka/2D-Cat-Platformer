@@ -19,10 +19,15 @@ const keys = new Set();
 const justPressed = new Set();
 const particles = [];
 const camera = { x: 0, y: 0 };
+const introButton = { x: 0, y: 0, w: 0, h: 0 };
+const resetButton = { x: 0, y: 0, w: 0, h: 0 };
 const levelBackground = new Image();
+const skillTreeImage = new Image();
 
 levelBackground.decoding = "async";
 levelBackground.src = new URL("../assets/level-background.png", import.meta.url).href;
+skillTreeImage.decoding = "async";
+skillTreeImage.src = new URL("../assets/skill-tree.png", import.meta.url).href;
 
 const state = {
   levelIndex: 0,
@@ -42,6 +47,7 @@ const state = {
   },
   mode: "play",
   treeSelection: "doubleJump",
+  tutorialSeen: false,
   message: "",
   messageTime: 0,
   messageLife: 0,
@@ -125,6 +131,39 @@ const SKILLS = [
     color: "#94d7ff",
   },
 ];
+
+const SKILL_TREE_BRANCHES = {
+  doubleJump: {
+    x: 0.27,
+    y: 0.5,
+    path: [
+      { x: 0.5, y: 0.86 },
+      { x: 0.44, y: 0.66 },
+      { x: 0.34, y: 0.56 },
+      { x: 0.27, y: 0.5 },
+    ],
+  },
+  dash: {
+    x: 0.61,
+    y: 0.25,
+    path: [
+      { x: 0.5, y: 0.86 },
+      { x: 0.53, y: 0.66 },
+      { x: 0.57, y: 0.45 },
+      { x: 0.61, y: 0.25 },
+    ],
+  },
+  glide: {
+    x: 0.79,
+    y: 0.53,
+    path: [
+      { x: 0.5, y: 0.86 },
+      { x: 0.59, y: 0.69 },
+      { x: 0.7, y: 0.59 },
+      { x: 0.79, y: 0.53 },
+    ],
+  },
+};
 
 const MUSIC_THEMES = {
   forest: {
@@ -734,6 +773,25 @@ function onKeyUp(event) {
   if (isGameKey(key)) event.preventDefault();
 }
 
+function onPointerDown(event) {
+  startAudio();
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+
+  if (canShowResetButton() && pointInRect(x, y, resetButton)) {
+    restartRun();
+    event.preventDefault();
+    return;
+  }
+
+  if (state.mode !== "intro") return;
+  if (pointInRect(x, y, introButton)) {
+    acknowledgeIntro();
+    event.preventDefault();
+  }
+}
+
 function isGameKey(key) {
   return (
     key.startsWith("Arrow") ||
@@ -815,6 +873,7 @@ function saveGame() {
         collected: state.collected,
         unlocked: state.unlocked,
         hintsSeen: state.hintsSeen,
+        tutorialSeen: state.tutorialSeen,
       })
     );
   } catch {
@@ -839,6 +898,7 @@ function loadGame() {
     state.flippedCreatures = {};
     state.unlocked = { ...state.unlocked, ...(data.unlocked || {}) };
     state.hintsSeen = data.hintsSeen || {};
+    state.tutorialSeen = Boolean(data.tutorialSeen);
   } catch {
     state.levelIndex = 0;
   }
@@ -867,6 +927,7 @@ function resetPlayerToSpawn() {
 
 function restartRun() {
   const best = state.highScore;
+  const tutorialSeen = state.tutorialSeen;
   state.levelIndex = 0;
   state.skillPoints = 0;
   state.score = 0;
@@ -882,8 +943,9 @@ function restartRun() {
     dash: false,
     glide: false,
   };
-  state.mode = "play";
+  state.mode = tutorialSeen ? "play" : "intro";
   state.treeSelection = "doubleJump";
+  state.tutorialSeen = tutorialSeen;
   state.message = "";
   state.messageTime = 0;
   state.messageLife = 0;
@@ -920,7 +982,18 @@ function restartRun() {
   saveGame();
 }
 
+function acknowledgeIntro() {
+  state.tutorialSeen = true;
+  state.mode = "play";
+  state.hint = "";
+  state.hintTime = 0;
+  state.hintLockTime = 0;
+  showMessage(currentLevel().story, 7);
+  saveGame();
+}
+
 function showMessage(text, life = 4.2) {
+  life = Math.max(life, 5.8);
   state.message = text;
   state.messageTime = life;
   state.messageLife = life;
@@ -954,6 +1027,7 @@ function addScore(value, level, x, y) {
 }
 
 function showHint(hint, life = 5.5, force = false) {
+  life = Math.max(life, 7.2);
   if (state.hintsSeen[hint.id]) return;
   if (!force && state.hintLockTime > 0 && state.hintId !== hint.id) return;
   if (state.hintId !== hint.id) {
@@ -964,7 +1038,7 @@ function showHint(hint, life = 5.5, force = false) {
     state.hintLockTime = force ? Math.min(life, 3.4) : state.hintLockTime;
     return;
   }
-  if (hint.sticky) state.hintTime = Math.max(state.hintTime, 1.15);
+  if (hint.sticky) state.hintTime = Math.max(state.hintTime, 2.35);
   if (force) state.hintLockTime = Math.min(life, 3.4);
 }
 
@@ -980,7 +1054,7 @@ function showSkillInstruction(id) {
 function completeHint(id) {
   if (state.hintsSeen[id]) return;
   state.hintsSeen[id] = true;
-  if (state.hintId === id) state.hintTime = Math.min(state.hintTime, 0.7);
+  if (state.hintId === id) state.hintTime = Math.min(state.hintTime, 2.2);
   saveGame();
 }
 
@@ -1236,9 +1310,17 @@ function updateGame(dt) {
 
   if (state.lifeModalTime > 0) state.lifeModalTime -= dt;
 
+  if (state.mode === "intro") {
+    state.transition = Math.max(0, state.transition - dt);
+    if (state.messageTime > 0) state.messageTime -= dt * 0.25;
+    updateParticles(dt);
+    if (tapped("Enter", "Space")) acknowledgeIntro();
+    return;
+  }
+
   if (state.mode === "gameover") {
     updateParticles(dt);
-    if (tapped("KeyR", "Enter", "Space")) restartRun();
+    if (tapped("KeyR")) restartRun();
     return;
   }
 
@@ -1613,6 +1695,8 @@ function draw() {
   if (state.mode === "ending") drawEnding(level);
   if (state.mode === "gameover") drawGameOver(level);
   if (state.transition > 0) drawTransition(level);
+  if (canShowResetButton()) drawResetButton(level);
+  if (state.mode === "intro") drawIntroModal(level);
 }
 
 function updateCamera(level) {
@@ -2787,7 +2871,7 @@ function drawPlayer(level) {
     ctx.globalAlpha = 1;
   }
 
-  if (state.unlocked.doubleJump) {
+  if (state.unlocked.doubleJump && !walking) {
     ctx.strokeStyle = "rgba(255,255,255,0.58)";
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -2820,43 +2904,133 @@ function drawParticles() {
 }
 
 function drawTinyProgress(level) {
-  const x = 26;
-  const y = 26;
+  const x = viewW < 560 ? 14 : 24;
+  const y = viewW < 560 ? 14 : 24;
+  const panelW = Math.min(viewW - x * 2, viewW < 560 ? 224 : 246);
+  const panelH = 132;
+  const artH = panelH - 26;
+  const naturalW = skillTreeImage.naturalWidth || 1086;
+  const naturalH = skillTreeImage.naturalHeight || 1448;
+  const artW = Math.min(76, artH * (naturalW / naturalH));
+  const art = {
+    x: x + 10,
+    y: y + 13,
+    w: artW,
+    h: artH,
+  };
+  const labelX = art.x + art.w + 14;
+  const labelMaxW = panelW - (labelX - x) - 10;
+  const t = performance.now() / 1000;
+
   ctx.save();
-  ctx.globalAlpha = 0.78;
+
+  ctx.globalAlpha = 0.86;
+  ctx.fillStyle = "rgba(5, 10, 16, 0.54)";
+  roundedRect(x, y, panelW, panelH, 9);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(169, 255, 215, 0.2)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  const rootGlow = ctx.createRadialGradient(art.x + art.w * 0.5, art.y + art.h * 0.82, 2, art.x + art.w * 0.5, art.y + art.h * 0.82, art.h * 0.72);
+  rootGlow.addColorStop(0, "rgba(255, 211, 125, 0.16)");
+  rootGlow.addColorStop(1, "rgba(255, 211, 125, 0)");
+  ctx.fillStyle = rootGlow;
+  ctx.beginPath();
+  ctx.arc(art.x + art.w * 0.5, art.y + art.h * 0.82, art.h * 0.72, 0, TAU);
+  ctx.fill();
+
+  if (skillTreeImage.complete && skillTreeImage.naturalWidth) {
+    ctx.save();
+    ctx.globalAlpha = 0.82;
+    ctx.drawImage(skillTreeImage, art.x, art.y, art.w, art.h);
+    ctx.restore();
+  }
+
+  for (const node of SKILLS) {
+    drawSkillBranchEffect(art, node, t, level.palette);
+  }
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.font = "700 11px Georgia, serif";
+  ctx.fillStyle = "rgba(255, 246, 220, 0.72)";
+  ctx.fillText("Skill tree", labelX, y + 16);
+
   for (let i = 0; i < SKILLS.length; i += 1) {
     const node = SKILLS[i];
-    const px = x + i * 28;
-    const py = y + Math.sin(i) * 3;
-    if (i > 0) {
-      ctx.strokeStyle = state.unlocked[node.id] ? level.palette.glow : "rgba(255,255,255,0.17)";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(px - 24, py);
-      ctx.lineTo(px - 4, py);
-      ctx.stroke();
-    }
-    ctx.fillStyle = state.unlocked[node.id] ? node.color : "rgba(255,255,255,0.2)";
+    const lit = state.unlocked[node.id];
+    const ready = canUnlock(node);
+    const rowY = y + 37 + i * 20;
+    ctx.fillStyle = lit ? node.color : ready ? level.palette.glow : "rgba(255,255,255,0.25)";
     ctx.beginPath();
-    ctx.arc(px, py, state.unlocked[node.id] ? 5 : 4, 0, TAU);
+    ctx.arc(labelX, rowY, lit ? 4.5 : 3.6, 0, TAU);
     ctx.fill();
+    ctx.font = `${viewW < 560 ? 11 : 12}px Georgia, serif`;
+    ctx.fillStyle = lit ? "rgba(255, 246, 220, 0.94)" : ready ? "rgba(255, 233, 166, 0.9)" : "rgba(255, 246, 220, 0.46)";
+    fitText(skillHudLabel(node.id), labelX + 10, rowY, labelMaxW, 12);
   }
+
+  const statY = y + panelH - 18;
+  ctx.font = "12px Georgia, serif";
+  ctx.textBaseline = "middle";
   for (let i = 0; i < state.skillPoints; i += 1) {
     ctx.fillStyle = level.palette.glow;
     ctx.beginPath();
-    ctx.ellipse(x + 2 + i * 10, y + 24, 3, 5, 0.5, 0, TAU);
+    ctx.ellipse(x + 14 + i * 8, statY, 2.6, 4.4, 0.5, 0, TAU);
     ctx.fill();
   }
+  ctx.fillStyle = "rgba(255, 246, 220, 0.7)";
+  ctx.fillText(`Seeds ${state.skillPoints}`, x + 42, statY);
+
   if (state.score > 0) {
     ctx.fillStyle = level.palette.accent;
     ctx.beginPath();
-    ctx.ellipse(x + 2, y + 42, 4, 6, 0.4, 0, TAU);
+    ctx.ellipse(x + panelW - 74, statY, 3.8, 5.7, 0.4, 0, TAU);
     ctx.fill();
-    ctx.font = "14px Georgia, serif";
     ctx.fillStyle = "rgba(255, 246, 220, 0.82)";
-    ctx.textAlign = "left";
-    ctx.fillText(String(state.score), x + 12, y + 47);
+    ctx.fillText(`Points ${state.score}`, x + panelW - 62, statY);
   }
+  ctx.restore();
+}
+
+function skillHudLabel(id) {
+  if (id === "doubleJump") return "Double Jump";
+  if (id === "dash") return "Dash";
+  if (id === "glide") return "Glide Down";
+  return "Skill";
+}
+
+function canShowResetButton() {
+  return state.mode !== "intro";
+}
+
+function drawResetButton(level) {
+  const label = "Reset";
+  const padX = 10;
+  const h = 30;
+  ctx.save();
+  ctx.font = "12px Georgia, serif";
+  const w = Math.max(58, ctx.measureText(label).width + padX * 2);
+  resetButton.w = w;
+  resetButton.h = h;
+  resetButton.x = viewW - w - 18;
+  resetButton.y = viewH - h - 16;
+
+  ctx.globalAlpha = state.mode === "gameover" ? 0.54 : 0.68;
+  ctx.fillStyle = "rgba(5, 10, 16, 0.58)";
+  roundedRect(resetButton.x, resetButton.y, resetButton.w, resetButton.h, 8);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 239, 190, 0.24)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.globalAlpha = state.mode === "gameover" ? 0.64 : 0.82;
+  ctx.fillStyle = level.palette.glow;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, resetButton.x + resetButton.w / 2, resetButton.y + resetButton.h / 2 + 1);
   ctx.restore();
 }
 
@@ -3027,89 +3201,323 @@ function drawGameOver(level) {
 
   ctx.font = `${viewW < 520 ? 15 : 17}px Georgia, serif`;
   ctx.fillStyle = "rgba(255, 246, 220, 0.78)";
-  wrapText("Press R, Enter, or Space to start again from the beginning.", cx, y + boxH - 58, boxW - 68, 24);
+  wrapText("Press R to start again from the beginning.", cx, y + boxH - 58, boxW - 68, 24);
   ctx.restore();
+}
+
+function drawIntroModal(level) {
+  const compact = viewW < 620;
+  const boxW = Math.min(compact ? 520 : 660, viewW - 34);
+  const boxH = Math.min(compact ? 468 : 392, viewH - 48);
+  const x = (viewW - boxW) / 2;
+  const y = (viewH - boxH) / 2;
+  const cx = viewW / 2;
+  const innerPad = compact ? 24 : 38;
+  const buttonW = Math.min(184, boxW - innerPad * 2);
+  const buttonH = 46;
+  introButton.x = cx - buttonW / 2;
+  introButton.y = y + boxH - 76;
+  introButton.w = buttonW;
+  introButton.h = buttonH;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(4, 7, 11, 0.74)";
+  ctx.fillRect(0, 0, viewW, viewH);
+
+  const glow = ctx.createRadialGradient(cx, y + boxH * 0.18, 20, cx, y + boxH * 0.18, boxW * 0.62);
+  glow.addColorStop(0, "rgba(255, 211, 125, 0.13)");
+  glow.addColorStop(1, "rgba(255, 211, 125, 0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cx, y + boxH * 0.2, boxW * 0.58, 0, TAU);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(9, 17, 27, 0.94)";
+  roundedRect(x, y, boxW, boxH, 20);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 239, 190, 0.42)";
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(255, 246, 220, 0.98)";
+  ctx.font = `${viewW < 520 ? 30 : 38}px Georgia, serif`;
+  ctx.fillText("Find your way home", cx, y + (compact ? 48 : 54));
+
+  ctx.font = `${viewW < 520 ? 14 : 16}px Georgia, serif`;
+  ctx.fillStyle = "rgba(255, 246, 220, 0.68)";
+  ctx.fillText("Remember the path, then follow the forest scent.", cx, y + (compact ? 82 : 90));
+
+  const controls = [
+    { title: "Move", keys: ["A", "D", "Arrows"], detail: "Cross quiet platforms" },
+    { title: "Jump", keys: ["Space", "W", "Up"], detail: "Reach higher paths" },
+    { title: "Pounce", keys: ["F"], detail: "Flip slow creatures" },
+  ];
+  const gridTop = y + (compact ? 112 : 126);
+  const gridGap = compact ? 10 : 14;
+  const gridW = boxW - innerPad * 2;
+  const columns = compact && boxW < 430 ? 1 : 3;
+  const cardW = (gridW - gridGap * (columns - 1)) / columns;
+  const cardH = columns === 1 ? 74 : 112;
+  for (let i = 0; i < controls.length; i += 1) {
+    const col = i % columns;
+    const row = Math.floor(i / columns);
+    drawIntroControlColumn(
+      controls[i],
+      x + innerPad + col * (cardW + gridGap),
+      gridTop + row * (cardH + gridGap),
+      cardW,
+      cardH,
+      level
+    );
+  }
+
+  const scentY = gridTop + (columns === 1 ? controls.length * (cardH + gridGap) - gridGap + 24 : cardH + 34);
+  ctx.textAlign = "center";
+  ctx.font = `${viewW < 520 ? 14 : 15}px Georgia, serif`;
+  ctx.fillStyle = "rgba(197, 229, 215, 0.78)";
+  ctx.fillText("The scent trail bends toward home.", cx, scentY);
+
+  ctx.fillStyle = level.palette.glow;
+  roundedRect(introButton.x, introButton.y, introButton.w, introButton.h, 15);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = "rgba(14, 23, 26, 0.92)";
+  ctx.font = "700 18px Georgia, serif";
+  ctx.fillText("Got it", cx, introButton.y + introButton.h / 2 + 1);
+
+  ctx.font = "13px Georgia, serif";
+  ctx.fillStyle = "rgba(255, 246, 220, 0.58)";
+  ctx.fillText("Enter or Space confirms.", cx, y + boxH - 20);
+  ctx.restore();
+}
+
+function drawIntroControlColumn(item, x, y, w, h, level) {
+  ctx.save();
+  ctx.fillStyle = "rgba(255, 246, 220, 0.055)";
+  roundedRect(x, y, w, h, 12);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 239, 190, 0.18)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "700 14px Georgia, serif";
+  ctx.fillStyle = "rgba(255, 246, 220, 0.94)";
+  ctx.fillText(item.title, x + w / 2, y + 22);
+
+  drawKeyCaps(item.keys, x + w / 2, y + h * 0.52, w - 18, level);
+
+  ctx.font = "12px Georgia, serif";
+  ctx.fillStyle = "rgba(255, 246, 220, 0.58)";
+  ctx.fillText(item.detail, x + w / 2, y + h - 18);
+  ctx.restore();
+}
+
+function drawKeyCaps(keys, cx, y, maxW, level) {
+  const gap = 6;
+  ctx.font = "700 12px Georgia, serif";
+  const widths = keys.map((key) => Math.max(28, ctx.measureText(key).width + 16));
+  const totalW = widths.reduce((sum, width) => sum + width, 0) + gap * (keys.length - 1);
+  const rowKeys = totalW <= maxW ? keys : keys.slice(0, 2);
+  const rowWidths = totalW <= maxW ? widths : widths.slice(0, 2);
+  drawKeyCapRow(rowKeys, rowWidths, cx, y, gap, level);
+  if (totalW > maxW) {
+    drawKeyCapRow(keys.slice(2), widths.slice(2), cx, y + 24, gap, level);
+  }
+}
+
+function drawKeyCapRow(keys, widths, cx, y, gap, level) {
+  const totalW = widths.reduce((sum, width) => sum + width, 0) + gap * Math.max(0, keys.length - 1);
+  let x = cx - totalW / 2;
+  for (let i = 0; i < keys.length; i += 1) {
+    const w = widths[i];
+    ctx.fillStyle = "rgba(255, 246, 220, 0.9)";
+    roundedRect(x, y - 11, w, 22, 7);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(20, 30, 36, 0.28)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = level.palette.ground;
+    ctx.fillText(keys[i], x + w / 2, y + 1);
+    x += w + gap;
+  }
 }
 
 function drawSkillTree(level) {
   const p = level.palette;
   ctx.save();
-  ctx.fillStyle = "rgba(4, 7, 11, 0.58)";
+  ctx.fillStyle = "rgba(4, 7, 11, 0.64)";
   ctx.fillRect(0, 0, viewW, viewH);
 
-  const cx = viewW / 2;
-  const cy = viewH / 2;
-  const pulse = 1 + Math.sin(performance.now() / 420) * 0.035;
-  const glow = ctx.createRadialGradient(cx, cy, 20, cx, cy, 260);
-  glow.addColorStop(0, "rgba(255, 235, 180, 0.16)");
+  const layout = skillTreeLayout();
+  const cx = layout.x + layout.w / 2;
+  const root = treeImagePoint(layout, { x: 0.5, y: 0.84 });
+  const t = performance.now() / 1000;
+  const glow = ctx.createRadialGradient(cx, root.y, 20, cx, root.y, Math.max(layout.w, layout.h) * 0.45);
+  glow.addColorStop(0, "rgba(255, 235, 180, 0.17)");
   glow.addColorStop(1, "rgba(255, 235, 180, 0)");
   ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(cx, cy, 260, 0, TAU);
+  ctx.arc(cx, root.y, Math.max(layout.w, layout.h) * 0.45, 0, TAU);
   ctx.fill();
 
-  ctx.lineCap = "round";
-  for (const node of SKILLS) {
-    const parent = node.parent === "root" ? { x: 0, y: 0, id: "root" } : SKILLS.find((item) => item.id === node.parent);
-    const lit = state.unlocked[node.id];
-    const ready = canUnlock(node);
-    ctx.strokeStyle = lit ? node.color : ready ? p.glow : "rgba(255,255,255,0.14)";
-    ctx.lineWidth = lit ? 5 : ready ? 3 : 2;
-    ctx.beginPath();
-    ctx.moveTo(cx + parent.x * pulse, cy + parent.y * pulse);
-    ctx.quadraticCurveTo(cx + (parent.x + node.x) * 0.5, cy + (parent.y + node.y) * 0.5 - 26, cx + node.x * pulse, cy + node.y * pulse);
-    ctx.stroke();
+  if (skillTreeImage.complete && skillTreeImage.naturalWidth) {
+    ctx.save();
+    ctx.globalAlpha = 0.96;
+    ctx.drawImage(skillTreeImage, layout.x, layout.y, layout.w, layout.h);
+    ctx.restore();
+  } else {
+    ctx.font = "20px Georgia, serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255, 246, 220, 0.8)";
+    ctx.fillText("Remembering...", cx, viewH / 2);
   }
 
-  ctx.fillStyle = p.glow;
-  ctx.beginPath();
-  ctx.arc(cx, cy, 12, 0, TAU);
-  ctx.fill();
-  ctx.strokeStyle = "rgba(255,255,255,0.45)";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(cx, cy, 23, 0, TAU);
-  ctx.stroke();
+  for (const node of SKILLS) {
+    drawSkillBranchEffect(layout, node, t, p);
+  }
 
   for (const node of SKILLS) {
-    const x = cx + node.x * pulse;
-    const y = cy + node.y * pulse;
+    const branch = SKILL_TREE_BRANCHES[node.id];
+    const point = treeImagePoint(layout, branch);
     const selected = node.id === state.treeSelection;
     const lit = state.unlocked[node.id];
     const ready = canUnlock(node);
-    const radius = selected ? 20 : 15;
-    const nodeGlow = ctx.createRadialGradient(x, y, 1, x, y, selected ? 72 : 46);
-    nodeGlow.addColorStop(0, lit || ready ? node.color : "rgba(255,255,255,0.16)");
+    const radius = Math.max(12, layout.w * (selected ? 0.044 : 0.035));
+    const pulse = 1 + Math.sin(t * 3 + node.x * 0.03) * 0.08;
+    const nodeGlow = ctx.createRadialGradient(point.x, point.y, 1, point.x, point.y, radius * (selected ? 4.8 : 3.6) * pulse);
+    nodeGlow.addColorStop(0, lit ? node.color : ready ? p.glow : "rgba(255,255,255,0.15)");
     nodeGlow.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    ctx.globalAlpha = lit ? 0.9 : ready ? 0.78 : selected ? 0.42 : 0.2;
     ctx.fillStyle = nodeGlow;
     ctx.beginPath();
-    ctx.arc(x, y, selected ? 72 : 46, 0, TAU);
+    ctx.arc(point.x, point.y, radius * (selected ? 4.8 : 3.6) * pulse, 0, TAU);
     ctx.fill();
-    ctx.fillStyle = lit ? node.color : ready ? "#fff0b0" : "rgba(255,255,255,0.22)";
+    ctx.restore();
+
+    ctx.fillStyle = lit ? node.color : ready ? "#fff0b0" : "rgba(255,255,255,0.24)";
     ctx.beginPath();
-    ctx.arc(x, y, radius, 0, TAU);
+    ctx.arc(point.x, point.y, radius, 0, TAU);
     ctx.fill();
     ctx.strokeStyle = selected ? "#fff8d8" : "rgba(255,255,255,0.28)";
     ctx.lineWidth = selected ? 3 : 1.5;
     ctx.stroke();
-    drawSkillIcon(node.id, x, y, lit || ready ? "#15202a" : "rgba(10,14,20,0.55)");
+    drawSkillIcon(node.id, point.x, point.y, lit || ready ? "#15202a" : "rgba(10,14,20,0.55)");
   }
 
   const selected = selectedSkill();
   const ready = canUnlock(selected);
+  const labelY = Math.min(viewH - 54, layout.y + layout.h + 28);
   ctx.textAlign = "center";
   ctx.fillStyle = "rgba(255, 246, 220, 0.95)";
-  ctx.font = "24px Georgia, serif";
-  ctx.fillText(selected.label, cx, cy + 208);
+  ctx.font = `${viewW < 560 ? 21 : 24}px Georgia, serif`;
+  ctx.fillText(selected.label, cx, labelY);
   ctx.font = "17px Georgia, serif";
   ctx.globalAlpha = ready ? 0.92 : 0.56;
-  ctx.fillText(state.unlocked[selected.id] ? "lit" : ready ? "E" : "sleeping", cx, cy + 236);
+  ctx.fillText(state.unlocked[selected.id] ? "lit" : ready ? "E" : "sleeping", cx, labelY + 28);
   ctx.globalAlpha = 1;
 
   for (let i = 0; i < state.skillPoints; i += 1) {
     ctx.fillStyle = p.glow;
     ctx.beginPath();
-    ctx.ellipse(cx - (state.skillPoints - 1) * 7 + i * 14, cy - 216, 4, 8, 0.4, 0, TAU);
+    ctx.ellipse(cx - (state.skillPoints - 1) * 7 + i * 14, layout.y + layout.h - 48, 4, 8, 0.4, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function skillTreeLayout() {
+  const naturalW = skillTreeImage.naturalWidth || 1086;
+  const naturalH = skillTreeImage.naturalHeight || 1448;
+  const maxW = Math.min(viewW * 0.92, 560);
+  const maxH = viewH * (viewH < 620 ? 0.76 : 0.8);
+  const scale = Math.min(maxW / naturalW, maxH / naturalH);
+  const w = naturalW * scale;
+  const h = naturalH * scale;
+  return {
+    x: (viewW - w) / 2,
+    y: Math.max(18, viewH * 0.045),
+    w,
+    h,
+  };
+}
+
+function treeImagePoint(layout, point) {
+  return {
+    x: layout.x + point.x * layout.w,
+    y: layout.y + point.y * layout.h,
+  };
+}
+
+function sampleSkillBranch(layout, path, progress) {
+  const points = path.map((point) => treeImagePoint(layout, point));
+  const lengths = [];
+  let total = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const length = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    lengths.push(length);
+    total += length;
+  }
+  let target = (((progress % 1) + 1) % 1) * total;
+  for (let i = 1; i < points.length; i += 1) {
+    const length = lengths[i - 1];
+    if (target <= length || i === points.length - 1) {
+      const amount = length ? target / length : 0;
+      return {
+        x: lerp(points[i - 1].x, points[i].x, amount),
+        y: lerp(points[i - 1].y, points[i].y, amount),
+      };
+    }
+    target -= length;
+  }
+  return points[points.length - 1];
+}
+
+function drawSkillBranchEffect(layout, node, t, palette) {
+  const branch = SKILL_TREE_BRANCHES[node.id];
+  const selected = node.id === state.treeSelection;
+  const lit = state.unlocked[node.id];
+  const ready = canUnlock(node);
+  const path = branch.path.map((point) => treeImagePoint(layout, point));
+  const active = lit || ready || selected;
+  const alpha = lit ? 0.58 : ready ? 0.46 : selected ? 0.3 : 0.1;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "screen";
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = lit ? node.color : ready ? palette.glow : "rgba(255, 246, 220, 0.35)";
+  ctx.lineWidth = active ? Math.max(2, layout.w * 0.012) : 1.4;
+  ctx.beginPath();
+  ctx.moveTo(path[0].x, path[0].y);
+  for (let i = 1; i < path.length; i += 1) {
+    const midX = (path[i - 1].x + path[i].x) / 2;
+    const midY = (path[i - 1].y + path[i].y) / 2;
+    ctx.quadraticCurveTo(path[i - 1].x, path[i - 1].y, midX, midY);
+  }
+  ctx.lineTo(path[path.length - 1].x, path[path.length - 1].y);
+  ctx.stroke();
+
+  const motes = lit ? 9 : ready ? 7 : selected ? 5 : 2;
+  for (let i = 0; i < motes; i += 1) {
+    const point = sampleSkillBranch(layout, branch.path, i / motes + t * (lit ? 0.13 : 0.08));
+    const pulse = (Math.sin(t * 4 + i * 1.7 + node.x) + 1) / 2;
+    const radius = (2 + pulse * 3.8) * (lit ? 1 : 0.78);
+    const glow = ctx.createRadialGradient(point.x, point.y, 1, point.x, point.y, radius * 5);
+    glow.addColorStop(0, lit ? node.color : palette.glow);
+    glow.addColorStop(1, "rgba(255, 246, 180, 0)");
+    ctx.globalAlpha = (lit ? 0.72 : ready ? 0.58 : 0.34) * (0.55 + pulse * 0.45);
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, radius * 5, 0, TAU);
     ctx.fill();
   }
   ctx.restore();
@@ -3233,6 +3641,17 @@ function measureWrappedLines(text, maxWidth, font) {
   return lines;
 }
 
+function fitText(text, x, y, maxWidth, minSize = 11) {
+  const parts = ctx.font.split(" ");
+  const family = parts.slice(-2).join(" ") || "Georgia, serif";
+  let size = parseFloat(parts.find((part) => part.endsWith("px"))) || 12;
+  while (size > minSize && ctx.measureText(text).width > maxWidth) {
+    size -= 0.5;
+    ctx.font = `${size}px ${family}`;
+  }
+  ctx.fillText(text, x, y);
+}
+
 function wrapText(text, x, y, maxWidth, lineHeight) {
   const words = text.split(" ");
   const lines = [];
@@ -3280,10 +3699,12 @@ function frame(now) {
 window.addEventListener("resize", resize);
 window.addEventListener("keydown", onKeyDown, { passive: false });
 window.addEventListener("keyup", onKeyUp, { passive: false });
+canvas.addEventListener("pointerdown", onPointerDown, { passive: false });
 window.addEventListener("blur", () => keys.clear());
 
 resize();
 loadGame();
 resetPlayerToSpawn();
+if (!state.tutorialSeen) state.mode = "intro";
 showMessage(currentLevel().story, 4.6);
 requestAnimationFrame(frame);
