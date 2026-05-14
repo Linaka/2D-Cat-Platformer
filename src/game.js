@@ -1197,6 +1197,13 @@ function isNearShrine(level) {
   return Math.hypot(dx, dy) < 82;
 }
 
+function shrineApproach(level) {
+  const dx = player.x + player.w / 2 - level.shrine.x;
+  const dy = player.y + player.h / 2 - level.shrine.y;
+  const distance = Math.hypot(dx, dy);
+  return 1 - clamp((distance - 86) / 210, 0, 1);
+}
+
 function allSkillsUnlocked() {
   return SKILLS.every((node) => state.unlocked[node.id]);
 }
@@ -2530,52 +2537,65 @@ function drawShrine(level) {
   const s = level.shrine;
   const p = level.palette;
   const t = performance.now() / 1000;
+  const naturalW = skillTreeImage.naturalWidth || 1086;
+  const naturalH = skillTreeImage.naturalHeight || 1448;
+  const approach = shrineApproach(level);
+  const near = isNearShrine(level);
+  const treeH = 214 + approach * 20 + Math.sin(t * 2.4) * approach * 2.4;
+  const treeW = treeH * (naturalW / naturalH);
+  const layout = {
+    x: -treeW / 2,
+    y: -treeH + 18,
+    w: treeW,
+    h: treeH,
+  };
+
   ctx.save();
   ctx.translate(s.x, s.y);
 
-  const near = isNearShrine(level);
-  const glow = ctx.createRadialGradient(0, -32, 2, 0, -32, near ? 130 : 90);
-  glow.addColorStop(0, near ? p.glow : p.accent);
-  glow.addColorStop(0.35, near ? "rgba(255, 238, 180, 0.34)" : "rgba(160, 240, 220, 0.18)");
+  const glowRadius = 88 + approach * 138;
+  const glow = ctx.createRadialGradient(0, -treeH * 0.38, 2, 0, -treeH * 0.38, glowRadius);
+  glow.addColorStop(0, near ? p.glow : "rgba(169, 255, 215, 0.52)");
+  glow.addColorStop(0.35, `rgba(255, 238, 180, ${0.1 + approach * 0.32})`);
   glow.addColorStop(1, "rgba(255, 238, 180, 0)");
   ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(0, -32, near ? 130 : 90, 0, TAU);
+  ctx.arc(0, -treeH * 0.38, glowRadius, 0, TAU);
   ctx.fill();
 
-  ctx.strokeStyle = p.lip;
-  ctx.lineWidth = 7;
-  ctx.lineCap = "round";
+  ctx.fillStyle = "rgba(4, 8, 11, 0.34)";
   ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.bezierCurveTo(-16, -54, 6, -95, 0, -140);
-  ctx.stroke();
+  ctx.ellipse(0, 7, treeW * 0.32, 13 + approach * 4, 0, 0, TAU);
+  ctx.fill();
 
-  for (let i = 0; i < SKILLS.length; i += 1) {
-    const node = SKILLS[i];
-    const lit = state.unlocked[node.id];
-    const angle = -Math.PI / 2 + i * 0.76;
-    const len = 44 + i * 9;
-    ctx.strokeStyle = lit ? node.color : "rgba(255,255,255,0.16)";
-    ctx.lineWidth = lit ? 4 : 2;
+  if (skillTreeImage.complete && skillTreeImage.naturalWidth) {
+    ctx.save();
+    ctx.globalAlpha = 0.82 + approach * 0.16;
+    ctx.drawImage(skillTreeImage, layout.x, layout.y, layout.w, layout.h);
+    ctx.restore();
+  } else {
+    ctx.strokeStyle = p.lip;
+    ctx.lineWidth = 7;
+    ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(0, -78);
-    ctx.quadraticCurveTo(Math.cos(angle) * 26, -100 + Math.sin(angle) * 18, Math.cos(angle) * len, -118 + Math.sin(angle) * len * 0.35);
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(-16, -54, 6, -95, 0, -140);
     ctx.stroke();
-    ctx.fillStyle = lit ? node.color : "rgba(255,255,255,0.28)";
-    ctx.beginPath();
-    ctx.arc(Math.cos(angle) * len, -118 + Math.sin(angle) * len * 0.35, lit ? 5 : 3, 0, TAU);
-    ctx.fill();
+  }
+
+  for (const node of SKILLS) {
+    drawSkillBranchEffect(layout, node, t, p, 0.12 + approach * 1.05, { selected: near && canUnlock(node) });
   }
 
   ctx.fillStyle = p.ground;
-  roundedRect(-35, -10, 70, 20, 10);
+  roundedRect(-38, -9, 76, 19, 10);
   ctx.fill();
-  ctx.strokeStyle = p.glow;
-  ctx.globalAlpha = near ? 0.9 : 0.45;
+
+  ctx.strokeStyle = near ? p.glow : "rgba(255, 246, 220, 0.24)";
+  ctx.globalAlpha = 0.22 + approach * 0.68;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.arc(0, -63 + Math.sin(t * 2) * 3, 18, 0, TAU);
+  ctx.arc(0, -treeH * 0.38 + Math.sin(t * 2) * 3, 18 + approach * 7, 0, TAU);
   ctx.stroke();
   ctx.globalAlpha = 1;
 
@@ -2583,7 +2603,7 @@ function drawShrine(level) {
     ctx.font = "700 18px Georgia, serif";
     ctx.textAlign = "center";
     ctx.fillStyle = "rgba(255, 246, 210, 0.84)";
-    ctx.fillText("E", 0, -172);
+    ctx.fillText("E", 0, layout.y - 18);
   }
   ctx.restore();
 }
@@ -3480,14 +3500,15 @@ function sampleSkillBranch(layout, path, progress) {
   return points[points.length - 1];
 }
 
-function drawSkillBranchEffect(layout, node, t, palette) {
+function drawSkillBranchEffect(layout, node, t, palette, intensity = 1, options = {}) {
+  intensity = clamp(intensity, 0, 1);
   const branch = SKILL_TREE_BRANCHES[node.id];
-  const selected = node.id === state.treeSelection;
+  const selected = options.selected ?? node.id === state.treeSelection;
   const lit = state.unlocked[node.id];
   const ready = canUnlock(node);
   const path = branch.path.map((point) => treeImagePoint(layout, point));
   const active = lit || ready || selected;
-  const alpha = lit ? 0.58 : ready ? 0.46 : selected ? 0.3 : 0.1;
+  const alpha = (lit ? 0.58 : ready ? 0.46 : selected ? 0.3 : 0.1) * intensity;
 
   ctx.save();
   ctx.globalCompositeOperation = "screen";
@@ -3514,7 +3535,7 @@ function drawSkillBranchEffect(layout, node, t, palette) {
     const glow = ctx.createRadialGradient(point.x, point.y, 1, point.x, point.y, radius * 5);
     glow.addColorStop(0, lit ? node.color : palette.glow);
     glow.addColorStop(1, "rgba(255, 246, 180, 0)");
-    ctx.globalAlpha = (lit ? 0.72 : ready ? 0.58 : 0.34) * (0.55 + pulse * 0.45);
+    ctx.globalAlpha = (lit ? 0.72 : ready ? 0.58 : 0.34) * (0.55 + pulse * 0.45) * intensity;
     ctx.fillStyle = glow;
     ctx.beginPath();
     ctx.arc(point.x, point.y, radius * 5, 0, TAU);
