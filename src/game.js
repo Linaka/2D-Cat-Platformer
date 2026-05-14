@@ -20,12 +20,9 @@ const justPressed = new Set();
 const particles = [];
 const camera = { x: 0, y: 0 };
 const levelBackground = new Image();
-const foregroundParallax = new Image();
 
 levelBackground.decoding = "async";
 levelBackground.src = new URL("../assets/level-background.png", import.meta.url).href;
-foregroundParallax.decoding = "async";
-foregroundParallax.src = new URL("../assets/foreground-parallax.png", import.meta.url).href;
 
 const state = {
   levelIndex: 0,
@@ -1607,7 +1604,6 @@ function draw() {
   drawWorld(level);
   ctx.restore();
 
-  drawForegroundParallax(level);
   drawVignette(level);
   drawTinyProgress(level);
   drawHint();
@@ -1688,29 +1684,6 @@ function drawImportedLevelBackground(level) {
 
   drawAtmosphereTexture(level);
   return true;
-}
-
-function drawForegroundParallax(level) {
-  if (!foregroundParallax.complete || !foregroundParallax.naturalWidth) return;
-
-  const imageW = foregroundParallax.naturalWidth;
-  const imageH = foregroundParallax.naturalHeight;
-  const scale = Math.max(viewW / imageW, viewH / imageH);
-  const drawW = imageW * scale;
-  const drawH = imageH * scale;
-  const maxPanX = Math.max(0, drawW - viewW);
-  const maxPanY = Math.max(0, drawH - viewH);
-  const worldPanX = clamp(camera.x / Math.max(1, level.width - viewW), 0, 1);
-  const worldPanY = clamp(camera.y / Math.max(1, level.height - viewH), 0, 1);
-  const x = -maxPanX * clamp(worldPanX * 1.16 + 0.02, 0, 1);
-  const y = -maxPanY * clamp(worldPanY * 0.58, 0, 1);
-
-  ctx.save();
-  ctx.globalAlpha = 0.46;
-  ctx.globalCompositeOperation = "multiply";
-  ctx.filter = "brightness(0.72) saturate(0.92)";
-  ctx.drawImage(foregroundParallax, x, y, drawW, drawH);
-  ctx.restore();
 }
 
 function drawCelestial(level) {
